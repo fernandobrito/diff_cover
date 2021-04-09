@@ -67,6 +67,7 @@ VIOLATION_CMD_HELP = "Which code quality tool to use (%s)" % "/".join(
 )
 INPUT_REPORTS_HELP = "Which violations reports to use"
 OPTIONS_HELP = "Options to be passed to the violations tool"
+DIFF_OPTIONS_HELP = "Options to be passed to the diff tool"
 
 
 LOGGER = logging.getLogger(__name__)
@@ -124,6 +125,10 @@ def parse_quality_args(argv):
     )
 
     parser.add_argument(
+        "--diff-options", type=str, nargs="?", default=None, help=DIFF_OPTIONS_HELP
+    )
+
+    parser.add_argument(
         "--fail-under", metavar="SCORE", type=float, default="0", help=FAIL_UNDER_HELP
     )
 
@@ -174,6 +179,7 @@ def generate_quality_report(
     ignore_unstaged=False,
     exclude=None,
     diff_range_notation=None,
+    diff_options=None,
     ignore_whitespace=False,
 ):
     """
@@ -184,7 +190,7 @@ def generate_quality_report(
     )
     diff = GitDiffReporter(
         compare_branch,
-        git_diff=GitDiffTool(diff_range_notation, ignore_whitespace),
+        git_diff=GitDiffTool(diff_range_notation, ignore_whitespace, diff_options=diff_options),
         ignore_staged=ignore_staged,
         ignore_unstaged=ignore_unstaged,
         supported_extensions=supported_extensions,
@@ -209,6 +215,14 @@ def generate_quality_report(
     reporter.generate_report(output_file)
     return reporter.total_percent_covered()
 
+def strip_quotes(string):
+    # strip quotes if present
+    first_char = string[0]
+    last_char = string[-1]
+    if first_char == last_char and first_char in ('"', "'"):
+        string = string[1:-1]
+    return string
+
 
 def main(argv=None, directory=None):
     """
@@ -225,13 +239,15 @@ def main(argv=None, directory=None):
     GitPathTool.set_cwd(directory)
     fail_under = arg_dict.get("fail_under")
     tool = arg_dict["violations"]
-    user_options = arg_dict.get("options")
-    if user_options:
-        # strip quotes if present
-        first_char = user_options[0]
-        last_char = user_options[-1]
-        if first_char == last_char and first_char in ('"', "'"):
-            user_options = user_options[1:-1]
+
+    user_tool_options = arg_dict.get("options")
+    if user_tool_options:
+        user_tool_options = strip_quotes(user_tool_options)
+
+    user_diff_options = arg_dict.get("diff_options")
+    if user_diff_options:
+        user_diff_options = strip_quotes(user_diff_options)
+
     reporter = None
     driver = QUALITY_DRIVERS.get(tool)
     if driver is None:
@@ -257,7 +273,7 @@ def main(argv=None, directory=None):
                         input_reports.append(open(path, "rb"))
                     except OSError:
                         LOGGER.warning(f"Could not load '{path}'")
-                reporter = QualityReporter(driver, input_reports, user_options)
+                reporter = QualityReporter(driver, input_reports, user_tool_options)
 
             percent_passing = generate_quality_report(
                 reporter,
@@ -268,6 +284,7 @@ def main(argv=None, directory=None):
                 ignore_unstaged=arg_dict["ignore_unstaged"],
                 exclude=arg_dict["exclude"],
                 diff_range_notation=arg_dict["diff_range_notation"],
+                diff_options=user_diff_options,
                 ignore_whitespace=arg_dict["ignore_whitespace"],
             )
             if percent_passing >= fail_under:
