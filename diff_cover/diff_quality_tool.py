@@ -77,6 +77,7 @@ VIOLATION_CMD_HELP = "Which code quality tool to use (%s)" % "/".join(
 INPUT_REPORTS_HELP = "Which violations reports to use"
 OPTIONS_HELP = "Options to be passed to the violations tool"
 INCLUDE_HELP = "Files to include (glob pattern)"
+DIFF_OPTIONS_HELP = "Options to be passed to the diff tool"
 REPORT_ROOT_PATH_HELP = "The root path used to generate a report"
 
 
@@ -140,6 +141,10 @@ def parse_quality_args(argv):
     parser.add_argument("input_reports", type=str, nargs="*", help=INPUT_REPORTS_HELP)
 
     parser.add_argument("--options", type=str, nargs="?", help=OPTIONS_HELP)
+
+    parser.add_argument(
+        "--diff-options", type=str, nargs="?", default=None, help=DIFF_OPTIONS_HELP
+    )
 
     parser.add_argument(
         "--fail-under", metavar="SCORE", type=float, help=FAIL_UNDER_HELP
@@ -232,6 +237,7 @@ def generate_quality_report(
     exclude=None,
     include=None,
     diff_range_notation=None,
+    diff_options=None,
     ignore_whitespace=False,
     quiet=False,
 ):
@@ -243,7 +249,7 @@ def generate_quality_report(
     )
     diff = GitDiffReporter(
         compare_branch,
-        git_diff=GitDiffTool(diff_range_notation, ignore_whitespace),
+        git_diff=GitDiffTool(diff_range_notation, ignore_whitespace, diff_options=diff_options),
         ignore_staged=ignore_staged,
         ignore_unstaged=ignore_unstaged,
         include_untracked=include_untracked,
@@ -280,6 +286,13 @@ def generate_quality_report(
 
     return reporter.total_percent_covered()
 
+def strip_quotes(string):
+    # strip quotes if present
+    first_char = string[0]
+    last_char = string[-1]
+    if first_char == last_char and first_char in ('"', "'"):
+        string = string[1:-1]
+    return string
 
 def main(argv=None, directory=None):
     """
@@ -300,13 +313,15 @@ def main(argv=None, directory=None):
     GitPathTool.set_cwd(directory)
     fail_under = arg_dict.get("fail_under")
     tool = arg_dict["violations"]
-    user_options = arg_dict.get("options")
-    if user_options:
-        # strip quotes if present
-        first_char = user_options[0]
-        last_char = user_options[-1]
-        if first_char == last_char and first_char in ('"', "'"):
-            user_options = user_options[1:-1]
+
+    user_tool_options = arg_dict.get("options")
+    if user_tool_options:
+        user_tool_options = strip_quotes(user_tool_options)
+
+    user_diff_options = arg_dict.get("diff_options")
+    if user_diff_options:
+        user_diff_options = strip_quotes(user_diff_options)
+
     reporter = None
     reporter_factory_fn = None
     driver = QUALITY_DRIVERS.get(tool)
@@ -342,10 +357,10 @@ def main(argv=None, directory=None):
                         report_root_path=arg_dict["report_root_path"]
                     )
 
-                reporter = QualityReporter(driver, input_reports, user_options)
+                reporter = QualityReporter(driver, input_reports, user_tool_options)
             elif reporter_factory_fn:
                 reporter = reporter_factory_fn(
-                    reports=input_reports, options=user_options
+                    reports=input_reports, options=user_tool_options
                 )
 
             percent_passing = generate_quality_report(
@@ -360,6 +375,7 @@ def main(argv=None, directory=None):
                 include_untracked=arg_dict["include_untracked"],
                 exclude=arg_dict["exclude"],
                 include=arg_dict["include"],
+                diff_options=user_diff_options,
                 diff_range_notation=arg_dict["diff_range_notation"],
                 ignore_whitespace=arg_dict["ignore_whitespace"],
                 quiet=quiet,

@@ -17,7 +17,7 @@ class GitDiffTool:
     Thin wrapper for a subset of the `git diff` command.
     """
 
-    def __init__(self, range_notation, ignore_whitespace):
+    def __init__(self, range_notation, ignore_whitespace, diff_options=None):
         """
         :param str range_notation:
             which range notation to use when producing the diff for committed
@@ -38,6 +38,9 @@ class GitDiffTool:
 
          :param bool ignore_whitespace:
             Perform a diff but ignore any and all whitespace.
+
+         :param str diff_options:
+            A string with additional options to be passed to the git diff command.
         """
         self.range_notation = range_notation
         self._default_git_args = [
@@ -53,6 +56,10 @@ class GitDiffTool:
         if ignore_whitespace:
             self._default_diff_args.append("--ignore-all-space")
             self._default_diff_args.append("--ignore-blank-lines")
+
+        if diff_options:
+            for option in diff_options.split(' '):
+                self._default_diff_args.append(option)
 
     def diff_committed(self, compare_branch="origin/main"):
         """
